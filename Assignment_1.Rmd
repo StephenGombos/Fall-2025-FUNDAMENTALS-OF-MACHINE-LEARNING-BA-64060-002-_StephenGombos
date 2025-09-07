@@ -1,0 +1,89 @@
+---
+title: "Assignment_1"
+author: "Stephen Gombos"
+date: "2025-09-07"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+# 1.) Download a dataset from the web. You may use any source, but specify the source in your code. Also ensure that the data has a mix of quantitative and qualitative (categorical) variables.**
+
+##Done outside of RStudio
+
+## 1.1) Set up RStudio file
+
+```{r}
+##install.packages("dplyr") Commented out, only need to install once
+library(dplyr)
+```
+
+# 2.) Import the dataset into R
+
+```{r}
+BathSoap <- read.csv("/Users/stephengombos/Documents/KSU MBA PROGRAM/Fall 2025 FUNDAMENTALS OF MACHINE LEARNING (BA-64060-002)/CSV Files/BathSoap.CSV")
+```
+
+## 2.1) Visualize the Dataset
+
+```{r}
+head(BathSoap)
+```
+
+# 3) Print out descriptive statistics for a selection of quantitative and categorical variables.
+
+```{r}
+summary(BathSoap)
+```
+
+# 4) Transform at least one variable. It doesn't matter what the transformation is.
+
+First lets look at the column names
+
+```{r}
+colnames(BathSoap)
+```
+
+Next lets confirm the dataclass for "Pur.Vol.No.Promo...."
+
+```{r}
+class(BathSoap$Pur.Vol.No.Promo....)
+```
+
+The data in this column is a percentage. For the transfirmation we will remove the % sign and transform it to a number and then to a decimal
+
+```{r}
+BathSoap$Pur.Vol.No.Promo.... <- gsub("%", "", BathSoap$Pur.Vol.No.Promo....)
+BathSoap$Pur.Vol.No.Promo.... <- as.numeric(BathSoap$Pur.Vol.No.Promo....)
+BathSoap$Pur.Vol.No.Promo.... <- BathSoap$Pur.Vol.No.Promo.... / 100
+```
+
+confirm the class has changed
+
+```{r}
+class(BathSoap$Pur.Vol.No.Promo....)
+```
+
+verify data
+
+```{r}
+head(BathSoap$Pur.Vol.No.Promo....)
+```
+
+# 5) Plot at least one quantitative variable, and one scatterplot
+
+## 5.1) Quantitative variable plot of the newly transformed BathSoap\$Pur.Vol.No.Promo.... using a histogram
+
+```{r}
+hist(BathSoap$Pur.Vol.No.Promo....)
+```
+
+## 5.2) Scatterplot of the Total Volume vs Value
+
+```{r}
+plot(BathSoap$Total.Volume, BathSoap$Value,
+     main = "Total Volume vs. Value",
+     xlab = "Total Volume",
+     ylab = "Value",
+     col = "blue")
+```
