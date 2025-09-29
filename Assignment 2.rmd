@@ -1,0 +1,206 @@
+---
+title: "Assignment_2"
+author: "Stephen Gombos"
+date: "2025-09-28"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Install packages if you haven't already
+# install.packages("caret")
+# install.packages("dplyr")
+# install.packages("class")
+# install.packages("gmodels")
+
+
+```{r}
+library(caret)
+library(dplyr)
+library(class)
+library(gmodels)
+```
+
+Load the UniversalBank CSV into Rstudio
+```{r}
+bank.df <- read.csv("/Users/stephengombos/Documents/KSU MBA PROGRAM/Fall 2025 FUNDAMENTALS OF MACHINE LEARNING (BA-64060-002)/CSV Files/UniversalBank.CSV")
+```
+
+# Drop ID and ZIP.Code columns
+```{r}
+bank.df <- bank.df %>% select(-ID, -ZIP.Code)
+```
+
+# Convert categorical Education variable into dummy variables
+# The fullRank=TRUE argument creates k-1 dummies to avoid multicollinearity
+```{r}
+bank.df$Education <- as.factor(bank.df$Education)
+dummy_model <- dummyVars(~ Education, data = bank.df, fullRank = FALSE)
+education_dummies <- predict(dummy_model, newdata = bank.df)
+bank.df <- cbind(bank.df, education_dummies)
+bank.df <- bank.df %>% select(-Education)
+```
+
+# Ensure the target variable is a factor for classification
+```{r}
+bank.df$Personal.Loan <- as.factor(bank.df$Personal.Loan)
+```
+
+# View the structure of the processed data
+```{r}
+str(bank.df)
+```
+##Normalization of the Data
+
+# Partition the data (60% training, 40% validation)
+```{r}
+set.seed(0101) # for reproducibility
+train.index <- createDataPartition(bank.df$Personal.Loan, p = 0.6, list = FALSE)
+train.df <- bank.df[train.index, ]
+valid.df <- bank.df[-train.index, ]
+```
+# Separate predictors and the target variable (loan)
+```{r}
+train.labels <- train.df$Personal.Loan
+valid.labels <- valid.df$Personal.Loan
+```
+
+# Normalize the data
+
+#Select all predictors except target for normalization ---
+```{r}
+predictor.names <- setdiff(names(train.df), "Personal.Loan")
+```
+# Normalize train and validation sets using all predictors including dummies
+```{r}
+norm.values <- preProcess(train.df[, predictor.names], method = c("center", "scale"))
+train.norm.df <- predict(norm.values, train.df[, predictor.names])
+valid.norm.df <- predict(norm.values, valid.df[, predictor.names])
+```
+
+# Define the new customer data
+```{r}
+new.customer <- data.frame(
+  Age = 40,
+  Experience = 10,
+  Income = 84,
+  Family = 2,
+  CCAvg = 2,
+  Mortgage = 0,
+  Securities.Account = 0,
+  CD.Account = 0,
+  Online = 1,
+  CreditCard = 1,
+  Education.1 = 0,
+  Education.2 = 1, 
+  Education.3 = 0
+)
+```
+# Normalize the new customer data using the training set's model
+```{r}
+new.customer.norm <- predict(norm.values, new.customer)
+```
+# Perform k-NN classification with k=1
+```{r}
+knn.pred.k1 <- knn(train = train.norm.df, test = new.customer.norm, cl = train.labels, k = 1)
+```
+# Print the classification result
+```{r}
+cat("How would this customer be classified (k=1)?\n")
+cat("Prediction:", as.character(knn.pred.k1), "\n")
+```
+
+# Find the best k value
+```{r}
+accuracy.df <- data.frame(k = seq(1, 20, 1), accuracy = rep(0, 20))
+
+for(i in 1:20) {
+  knn.pred <- knn(train.norm.df, valid.norm.df, cl = train.labels, k = i)
+  # In caret, the 'positive' class must be specified for metrics like Sensitivity
+  accuracy.df[i, 2] <- confusionMatrix(knn.pred, valid.labels, positive="1")$overall[1]
+}
+```
+# Find the k that maximizes accuracy
+```{r}
+best.k <- accuracy.df$k[which.max(accuracy.df$accuracy)]
+```
+
+# Plot accuracy vs. k
+
+```{r}
+ggplot(accuracy.df, aes(x = k, y = accuracy)) +
+  geom_line() +
+  geom_point() +
+  geom_point(data = subset(accuracy.df, k == best.k), color = "red", size = 3) +
+  geom_text(data = subset(accuracy.df, k == best.k),
+            aes(label = paste("Best k =", best.k)),
+            color = "red", vjust = -1, hjust = 0.5) +
+  labs(title = "Accuracy vs. k-Value",
+       x = "k",
+       y = "Validation Accuracy")
+
+cat("\nWhat is a choice of k that balances between overfitting and ignoring predictor information?\n")
+cat("The best value for k is:", best.k, "\n")
+```
+# Generate predictions for the validation set using the best k
+```{r}
+knn.pred.best <- knn(train.norm.df, valid.norm.df, cl = train.labels, k = best.k)
+```
+# Show the confusion matrix
+```{r}
+cat("\nConfusion matrix for the validation data (k =", best.k, "):\n")
+confusionMatrix(knn.pred.best, valid.labels, positive = "1")
+```
+#Classify the customer using the best k
+```{r}
+knn.pred.best.k.customer <- knn(train = train.norm.df, test = new.customer.norm, cl = train.labels, k = best.k)
+
+cat("\nClassify the customer using the best k (k=", best.k, "):\n")
+cat("Prediction:", as.character(knn.pred.best.k.customer), "\n")
+```
+
+# Repartition data: 50% training, 30% validation, 20% test
+```{r}
+set.seed(0101)
+train.index.new <- createDataPartition(bank.df$Personal.Loan, p = 0.5, list = FALSE)
+train.df.new <- bank.df[train.index.new, ]
+temp.df <- bank.df[-train.index.new, ]
+
+valid.index.new <- createDataPartition(temp.df$Personal.Loan, p = 0.6, list = FALSE) # 60% of remaining 50% is 30%
+valid.df.new <- temp.df[valid.index.new, ]
+test.df.new <- temp.df[-valid.index.new, ] # Remaining 40% of 50% is 20%
+```
+
+# Separate labels
+```{r}
+train.labels.new <- train.df.new$Personal.Loan
+valid.labels.new <- valid.df.new$Personal.Loan
+test.labels.new <- test.df.new$Personal.Loan
+```
+# Normalize the new partitions based on the new training set
+```{r}
+norm.values.new <- preProcess(train.df.new[, -which(names(train.df.new) == "Personal.Loan")], method=c("center", "scale"))
+train.norm.new <- predict(norm.values.new, train.df.new[, -which(names(train.df.new) == "Personal.Loan")])
+valid.norm.new <- predict(norm.values.new, valid.df.new[, -which(names(valid.df.new) == "Personal.Loan")])
+test.norm.new <- predict(norm.values.new, test.df.new[, -which(names(test.df.new) == "Personal.Loan")])
+```
+# Get predictions for all three sets using best.k
+```{r}
+train.pred.final <- knn(train.norm.new, train.norm.new, cl = train.labels.new, k = best.k)
+valid.pred.final <- knn(train.norm.new, valid.norm.new, cl = train.labels.new, k = best.k)
+test.pred.final <- knn(train.norm.new, test.norm.new, cl = train.labels.new, k = best.k)
+```
+# Generate and display confusion matrices
+```{r}
+cat("\n--- Comparison of Confusion Matrices (k =", best.k, ") ---\n")
+cat("\nTraining Set Performance:\n")
+print(confusionMatrix(train.pred.final, train.labels.new, positive = "1"))
+
+cat("\nValidation Set Performance:\n")
+print(confusionMatrix(valid.pred.final, valid.labels.new, positive = "1"))
+
+cat("\nTest Set Performance:\n")
+print(confusionMatrix(test.pred.final, test.labels.new, positive = "1"))
+```
