@@ -1,0 +1,391 @@
+---
+title: "Assignment4(3)_StephenGombos"
+author: "Stephen Gombos"
+date: "2025-10-25"
+output: word_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r}
+library(tidyverse)  # For data manipulation and visualization
+library(factoextra) # For clustering algorithms & visualization
+library(flexclust)    # For k-medians clustering
+library(knitr)      # For pretty-printing tables
+library(dplyr)      # Specifically for data wrangling
+```
+
+## Purpose
+
+The purpose of this assignment is to use k-Means for clustering.
+
+## Direction
+
+An equities analyst is studying the pharmaceutical industry and would
+like your help in exploring and understanding the financial data
+collected by her firm. Her main objective is to understand the structure
+of the pharmaceutical industry using some basic financial measures.
+Financial data gathered on 21 firms in the pharmaceutical industry are
+available in the file Pharmaceuticals.csv. For each firm, the following
+variables are recorded: 1. Market capitalization (in billions of
+dollars) 2. Beta 3. Price/earnings ratio 4. Return on equity 5. Return
+on assets 6. Asset turnover 7. Leverage 8. Estimated revenue growth 9.
+Net profit margin 10. Median recommendation (across major brokerages)
+11. Location of firm’s headquarters 12. Stock exchange on which the firm
+is listed
+
+# Use cluster analysis to explore and analyze the given dataset as follows:
+
+**a.** Use only the numerical variables (1 to 9) to cluster the 21
+firms. Justify the various choices made in conducting the cluster
+analysis, such as weights for different variables, the specific
+clustering algorithm(s) used, the number of clusters formed, and so on.
+
+**b.**Interpret the clusters with respect to the numerical variables
+used in forming the clusters.
+
+**c.** Is there a pattern in the clusters with respect to the numerical
+variables (10 to 12)? (those not used in forming the clusters)
+
+**d.** Provide an appropriate name for each cluster using any or all of
+the variables in the dataset.
+
+```{r}
+# Load the dataset
+pharma <- read.csv("/Users/stephengombos/Documents/KSU MBA PROGRAM/Fall 2025 FUNDAMENTALS OF MACHINE LEARNING (BA-64060-002)/CSV Files/Pharmaceuticals.CSV")
+
+summary(pharma)
+
+# Set row names to be the company names for easier identification in plots
+# We use pharma$Name instead of Symbol for clarity
+rownames(pharma) <- pharma$Name
+```
+
+### Separate Numerical and Categorical Data
+
+We must cluster using only the nine numerical variables (1-9). We will
+separate our data into two dataframes 
+one for clustering and one for later interpretation.
+
+```{r}
+# Select only the numerical variables (columns 3 through 11) for clustering
+pharma_numeric <- pharma[, 3:11]
+
+# Select the categorical variables (cols 10-12) and identifiers for interpretation
+pharma_categorical <- pharma[, c(1, 2, 12, 13, 14)]
+```
+
+### Scale the Data
+
+K-means clustering is distance-based, so it's highly sensitive to the
+scale of the variables. Variables with large variances (like
+`Market_Cap`, in billions) will dominate the clustering process over
+variables with small variances (like `Beta`).
+
+To ensure each variable contributes (roughly) equally, we must
+standardize the data. We will use z-score scaling, which transforms each
+variable to have a mean of 0 and a standard deviation of 1. This
+addresses the "weights for different variables" justification required
+by the assignment.
+
+```{r}
+# Scale the data using the scale() function (creates z-scores)
+pharma_scaled <- scale(pharma_numeric)
+
+# View the first few rows of the scaled data
+head(pharma_scaled, 3)
+```
+
+Note the negative and positive values, centered around 0
+
+### Visualize Pairwise Distances
+
+Before clustering, we can visualize the dissimilarity matrix to see if
+clusters are even present. Lighter squares indicate firms that are very
+different; darker squares indicate firms that are very similar.
+
+```{r}
+# Compute distances on scaled data
+distance <- get_dist(pharma_scaled)
+
+# Visualize the distance matrix
+fviz_dist(distance)
+```
+
+#Interpretation: The heat map shows several dark blocks (e.g., in the
+bottom-left and top-right), suggesting that natural groupings of similar
+firms exist in the data. This confirms that cluster analysis is an
+appropriate technique.
+
+------------------------------------------------------------------------
+
+## 2. Part (a): Conducting the Cluster Analysis
+
+Part (a) asks us to cluster the firms using the numerical variables and
+justify our choices, including the algorithm, weights, and number of
+clusters.
+
+-   **Algorithm:** We chose k-Means as it is a robust, efficient, and
+    widely-used partitioning algorithm, suitable for this dataset's
+    size.
+-   **Weights:** We "weighted" all variables equally by standardizing
+    the data (z-scores), as explained in the preparation step.
+-   **Number of Clusters (k):** We must find the optimal number of
+    clusters. We will use two common methods: the Elbow (WSS) method and
+    the Silhouette method.
+
+### Determine Optimal k (Number of Clusters)
+
+We set a seed to ensure our results are reproducible, as k-Means
+involves random starting points.
+
+```{r}
+set.seed(123)
+```
+
+## a) Elbow Method (Within-Cluster Sum of Squares)
+
+This method plots the total within-cluster sum of squares (WSS) for
+different values of k. We look for an "elbow" in the plot, where adding
+another cluster stops providing a significant reduction in WSS.
+
+```{r}
+# Use fviz_nbclust to compute and plot the WSS
+fviz_nbclust(pharma_scaled, kmeans, method = "wss")
+```
+
+## Interpretation:
+
+The plot shows a very sharp bend (an "elbow") at k = 4. After k = 4, the
+line becomes much flatter, suggesting diminishing returns from adding
+more clusters. This method strongly suggests k = 4 is optimal.
+
+## b) Silhouette Method
+
+This method measures how well-separated the clusters are. A high average
+silhouette width indicates that firms are well-matched to their own
+cluster and poorly-matched to neighboring clusters.
+
+```{r}
+# Use fviz_nbclust to compute and plot the average silhouette width
+fviz_nbclust(pharma_scaled, kmeans, method = "silhouette")
+```
+
+**Interpretation:** The silhouette method shows the highest average
+silhouette width at **k = 5**.
+
+### Justification for Choosing k = 4
+
+The Elbow method points to **k = 4** [cite: 24], while the Silhouette
+method suggests k = 5. For this business context, a smaller number of
+clusters is often more interpretable and actionable for an analyst[cite:
+5, 6]. Since k = 4 has strong statistical support from the elbow plot
+and represents a more parsimonious model, we will proceed with **k =
+4**.
+
+### Final k-Means Model (k = 4)
+
+We now run the final `kmeans` algorithm with `centers = 4`. We use
+`nstart = 25`, which runs the algorithm 25 times with different random
+starting centroids and picks the best result, helping to avoid a poor
+local optimum.
+
+```{r}
+# Run k-means with k = 4 and 25 random starts
+k_final <- kmeans(pharma_scaled, centers = 4, nstart = 25)
+
+# View the cluster centers (in standardized units)
+kable(k_final$centers, caption = "Cluster Centers (Standardized Z-Scores)")
+```
+
+**Interpretation of Standardized Centers:** This table shows the
+*average standardized value* for each variable in each cluster. \*
+**Positive values** are *above* the dataset's average for that variable.
+\* **Negative values** are *below* the dataset's average. \*
+**Example:** Cluster 2 has a very high `Market_Cap` (2.19) and
+`Net_Profit_Margin` (1.33). Cluster 3 has a very high `PE_Ratio` (2.05)
+and `Leverage` (1.81).
+
+```{r}
+# Number of firms in each cluster
+k_final$size
+```
+
+### Visualize the Final Clusters
+
+We can visualize the clusters using the first two principal components
+(which capture the most variance in the data).
+
+```{r visualize-clusters}
+fviz_cluster(k_final, data = pharma_scaled,
+             repel = TRUE, # Avoid label overlapping,
+             main = "k-Means Cluster Plot (k = 4)")
+```
+
+### K-Medians (Manhattan Distance) Check
+
+This is an alternative distance check, `kcca` (k-medians) with Manhattan
+distance. K-medians is less sensitive to outliers than k-means.
+
+```{r k-medians}
+#kmeans clustering, using manhattan distance
+k_medians = kcca(pharma_scaled, k=4, kccaFamily("kmedians"))
+k_medians
+```
+
+------------------------------------------------------------------------
+
+## 3. Part (b): Interpret Clusters (Numerical Variables)
+
+Part (b) asks us to interpret the clusters with respect to the numerical
+variables. The standardized centers above are hard to read. A *much*
+better way is to look at the **mean of the *original* unscaled data**
+for each cluster.
+
+```{r}
+# Add the cluster assignments back to the original numeric data
+pharma_numeric_clustered <- pharma_numeric %>%
+  mutate(Cluster = k_final$cluster)
+
+# Calculate the mean of each variable by cluster
+cluster_summary_numeric <- pharma_numeric_clustered %>%
+  group_by(Cluster) %>%
+  summarise_all(mean) %>%
+  mutate(Cluster_Size = k_final$size) # Add cluster size for context
+
+# Print a clean table
+kable(cluster_summary_numeric, digits = 2, 
+      caption = "Cluster Means (Original Unscaled Data)")
+```
+
+### Analysis of Numerical Profiles:
+
+-   **Cluster 1 (Size = 8):** These firms have **average to low
+    financial metrics** across the board. They have the *lowest*
+    `Market_Cap` (\$43.7B), `ROE` (19.8%), and `ROA` (9.5%). Their
+    `PE_Ratio` (22.3) and `Net_Profit_Margin` (15.5%) are also modest.
+-   **Cluster 2 (Size = 4):** This is the **"Blue Chip / Market
+    Leader"** group. These 4 firms have the *highest* `Market_Cap` (by
+    far, \$132.0B), `ROE` (46.8%), `ROA` (17.8%), `Asset_Turnover`
+    (0.95), and `Net_Profit_Margin` (22.4%). They also have very low
+    `Leverage` (0.33).
+-   **Cluster 3 (Size = 3):** This is a small, high-risk, high-growth
+    group. They have a very high `Rev_Growth` (23.4%) and the *highest*
+    `Leverage` (1.85). They also have the *highest* `PE_Ratio` (55.9,
+    suggesting high market expectations) but the *lowest*
+    `Net_Profit_Margin` (8.8%), indicating they are not yet highly
+    profitable.
+-   **Cluster 4 (Size = 6):** This group shows **strong profitability
+    but negative growth**. They have solid `ROE` (23.3%) and `ROA`
+    (11.7%), but they also have the *lowest* `Beta` (0.3), `PE_Ratio`
+    (20.5), and `Rev_Growth` (a negative -1.4%). This suggests they are
+    stable, mature companies, but their revenue is shrinking.
+
+------------------------------------------------------------------------
+
+## 4. Part (c): Cluster Patterns (Categorical Variables)
+
+Part (c) asks if there is a pattern in the clusters with respect to the
+categorical variables (10-12) that were *not* used in the analysis.
+
+```{r}
+# Add cluster assignments to the full, original dataset
+pharma_clustered <- pharma %>%
+  mutate(Cluster = k_final$cluster)
+```
+
+### Pattern by Median Recommendation
+
+```{r}
+rec_table <- table(pharma_clustered$Cluster, pharma_clustered$Median_Recommendation)
+kable(rec_table, caption = "Cluster vs. Median Recommendation")
+```
+
+**Pattern:** Yes, there is a clear pattern.
+
+-   **Cluster 1 (Low/Average):** This group is mixed, but it's the only
+    one with "Moderate Sell" recommendations.
+
+-   **Cluster 2 (Market Leaders):** 75% (3 of 4) have a "Moderate Buy"
+    recommendation.
+
+-   **Cluster 3 (High-Leverage/Growth):** 67% (2 of 3) have a "Moderate
+    Buy" recommendation.
+
+-   **Cluster 4 (Profitable/Shrinking):** 83% (5 of 6) have a "Hold"
+    recommendation, which aligns with their negative revenue growth.
+
+### Pattern by Location
+
+```{r}
+loc_table <- table(pharma_clustered$Cluster, pharma_clustered$Location)
+kable(loc_table, caption = "Cluster vs. Location")
+```
+
+**Pattern:** Yes, a very strong pattern.
+
+-   **Clusters 1, 2, and 3** are all **100% US-based firms**.
+
+-   **Cluster 4** is **100% non-US firms** (UK, SWITZERLAND, GERMANY,
+    FRANCE). This is a major finding: the clustering algorithm separated
+    the firms geographically based *only* on their financial data.
+
+### Pattern by Exchange
+
+```{r}
+ex_table <- table(pharma_clustered$Cluster, pharma_clustered$Exchange)
+kable(ex_table, caption = "Cluster vs. Exchange")
+```
+
+**Pattern:** Yes, this is also distinct.
+
+-   **Clusters 1, 2, and 4** are almost exclusively listed on the
+    **NYSE**.
+
+-   **Cluster 3 (High-Leverage/Growth):** Is the most diverse, with
+    firms on AMEX and NASDAQ, which are exchanges often associated with
+    smaller or higher-growth companies.
+
+------------------------------------------------------------------------
+
+## 5. Part (d): Naming the Clusters
+
+Part (d) asks us to provide an appropriate name for each cluster. Based
+on the analysis from (b) and (c):
+
+1.  **Cluster 1: "US Mid-Caps"**
+    -   **Justification:** This is the largest group, composed entirely
+        of US firms (from part c) with financial metrics that are
+        broadly average or slightly below average for this dataset (from
+        part b). They don't stand out as market leaders or as high-risk.
+2.  **Cluster 2: "US Blue Chip Leaders"**
+    -   **Justification:** This group contains the 4 firms with the
+        highest market cap, profitability (ROE, ROA, Margin), and asset
+        turnover (from part b). They are all US-based and listed on the
+        NYSE, and analysts rate them as "Moderate Buys" (from part c).
+3.  **Cluster 3: "High-Growth / High-Leverage US Firms"**
+    -   **Justification:** This small group is defined by its extremely
+        high leverage and high expected revenue growth (from part b).
+        Their high P/E ratios suggest the market has high expectations.
+        They are US-based but listed on more growth-oriented exchanges
+        (AMEX, NASDAQ) (from part c).
+4.  **Cluster 4: "Mature European Giants"**
+    -   **Justification:** This cluster's defining feature is that it
+        contains *all* the non-US firms (from part c). Their financial
+        profile (from part b) shows maturity: solid profitability but
+        low (or negative) revenue growth and low-risk betas. Analysts
+        predominantly have "Hold" ratings on them (from part c).
+
+------------------------------------------------------------------------
+
+**Comparison:** The cluster sizes for k-medians (Sizes: 4, 3, 5, 9) are
+different from k-means (Sizes: 8, 4, 3, 6). This shows that the
+clustering solution is *moderately sensitive* to the algorithm and
+distance metric used. However, the k-means solution, with its strong
+separation of US/non-US firms, appears to have found a very clear and
+interpretable structure in the data. We stand by the k-means solution.
